@@ -1,4 +1,6 @@
+using System;
 using System.Text;
+using System.Xml;
 using UnityEngine;
 using UnityEngine.Assertions;
 
@@ -46,6 +48,24 @@ public class GridGenerator : MonoBehaviour
 
     private Camera MainCamera;
 
+    private bool IsSwappingGems = false;
+
+    private GameObject OriginGem;
+    private GameObject TargetGem;
+
+    private Vector3 OriginGemPosition;
+    private Vector3 TargetGemPosition;
+
+    private const float SwapDuration = 0.5f;
+    private const float NeighborDistance = 1.5f;
+    private const float SelfDistance = 0.5f;
+
+    private float SwapTime;
+    private float SwapDistance;
+
+    private bool IsHorizontalSwap;
+    private bool IsVerticalSwap;
+
     private void Start()
     {
         // Save main camera for performance
@@ -57,68 +77,133 @@ public class GridGenerator : MonoBehaviour
 
     private void Update()
     {
-        Vector3? inputPosition = null;
-
-        // Handle mouse click
-        if (Input.GetMouseButtonDown(0))
+        if (!IsSwappingGems)
         {
-            inputPosition = Input.mousePosition;
-        }
+            Vector3? inputPosition = null;
 
-        // Handle screen touches.
-        if (Input.touchCount > 0)
-        {
-            Touch touch = Input.GetTouch(0);
-
-            if (touch.phase == TouchPhase.Ended)
+            // Handle mouse click
+            if (Input.GetMouseButtonDown(0))
             {
-                inputPosition = touch.position;
+                inputPosition = Input.mousePosition;
+            }
+
+            // Handle screen touches.
+            if (Input.touchCount > 0)
+            {
+                Touch touch = Input.GetTouch(0);
+
+                if (touch.phase == TouchPhase.Ended)
+                {
+                    inputPosition = touch.position;
+                }
+            }
+
+            if (inputPosition != null)
+            {
+                Debug.Log(inputPosition);
+
+                Ray ray = MainCamera.ScreenPointToRay(inputPosition.Value);
+                RaycastHit2D hit = Physics2D.Raycast(ray.origin, ray.direction);
+
+                if (hit.collider != null)
+                {
+                    GameObject clickedGem = hit.collider.gameObject;
+
+                    if (clickedGem != null && SelectedGem != null && SelectedGem != clickedGem)
+                    {
+                        // Swap the two gems if we already have a selected neighbor
+                        Vector3 clickedPosition = clickedGem.transform.position;
+
+                        float deltaX = Math.Abs(SelectedGem.transform.position.x - clickedPosition.x);
+                        float deltaY = Math.Abs(SelectedGem.transform.position.y - clickedPosition.y);
+
+                        Debug.Log("X: " + deltaX);
+                        Debug.Log("Y: " + deltaY);
+
+                        if (deltaX < NeighborDistance && deltaX > SelfDistance)
+                        {
+                            IsHorizontalSwap = true;
+                            IsVerticalSwap = false;
+                        }
+                        else if (deltaY < NeighborDistance && deltaY > SelfDistance)
+                        {
+                            IsHorizontalSwap = false;
+                            IsVerticalSwap = true;
+                        }
+                        else
+                        {
+                            IsHorizontalSwap = false;
+                            IsVerticalSwap = false;
+                        }
+
+                        if (IsHorizontalSwap || IsVerticalSwap)
+                        {
+                            // Restore the selected gem's material
+                            SelectedGem.GetComponent<SpriteRenderer>().material = OriginalMaterial;
+
+                            // Start the swapping animation 
+                            IsSwappingGems = true;
+
+                            OriginGem = SelectedGem;
+                            OriginGemPosition = OriginGem.transform.position;
+
+                            TargetGem = clickedGem;
+                            TargetGemPosition = TargetGem.transform.position;
+
+                            SwapTime = 0;
+
+                            if (IsHorizontalSwap)
+                            {
+                                SwapDistance = deltaX;
+                            }
+                            else if (IsVerticalSwap)
+                            {
+                                SwapDistance = deltaY;
+                            }
+
+                            // Clear the selected gem
+                            SelectedGem = null;
+                        }
+                    }
+                    else
+                    {
+                        // Otherwise, save it for later
+                        SelectedGem = clickedGem;
+
+                        // Change selected gem material
+                        OriginalMaterial = SelectedGem.GetComponent<SpriteRenderer>().material;
+                        SelectedGem.GetComponent<SpriteRenderer>().material = SelectedMaterial;
+                    }
+                }
             }
         }
-
-        if (inputPosition != null)
+        else
         {
-            Debug.Log(inputPosition);
+            // We are swapping the two Gems, don't take any input until we're done
+            float interpolationRatio = SwapTime / SwapDuration;
+            SwapTime += Time.deltaTime;
 
-            Ray ray = MainCamera.ScreenPointToRay(inputPosition.Value);
-            RaycastHit2D hit = Physics2D.Raycast(ray.origin, ray.direction);
+            TargetGem.transform.position = Vector3.Lerp(TargetGemPosition, OriginGemPosition, interpolationRatio);
+            OriginGem.transform.position = Vector3.Lerp(OriginGemPosition, TargetGemPosition, interpolationRatio);
 
-            if (hit.collider != null)
+            if (SwapTime > SwapDuration)
             {
-                GameObject clickedGem = hit.collider.gameObject;
-
-                if (clickedGem != null && SelectedGem != null && SelectedGem != clickedGem)
-                {
-                    // Swap the two gems if we already have a selected one
-                    Vector3 clickedPosition = clickedGem.transform.position;
-                    clickedGem.transform.position = SelectedGem.transform.position;
-                    SelectedGem.transform.position = clickedPosition;
-
-                    // Restore the selected gem's material
-                    SelectedGem.GetComponent<SpriteRenderer>().material = OriginalMaterial;
-
-                    // Clear the selected gem
-                    SelectedGem = null;
-                }
-                else
-                {
-                    // Otherwise, save it for later
-                    SelectedGem = clickedGem;
-
-                    // Change selected gem material
-                    OriginalMaterial = SelectedGem.GetComponent<SpriteRenderer>().material;
-                    SelectedGem.GetComponent<SpriteRenderer>().material = SelectedMaterial;
-                }
+                IsSwappingGems = false;
             }
         }
     }
 
     public void GenerateMatchGrid()
     {
+        // Clear the selected gem
+        SelectedGem = null;
+
         // We generate an initially solved grid
         GenerateInitialGrid();
+
         // Then, keep shuffling till conditions are satisfied
         ShuffleGridTiles();
+
         // Finally, generate the sprites for visual representation
         GenerateGridSprites();
     }
