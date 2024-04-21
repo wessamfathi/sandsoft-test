@@ -1,9 +1,6 @@
-using System;
-using System.Data;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Assertions;
-using static GridGenerator;
 
 public class GridGenerator : MonoBehaviour
 {
@@ -27,6 +24,10 @@ public class GridGenerator : MonoBehaviour
     // Parent gameObject for all icons (organization)
     public GameObject GemIconsParent;
 
+    public Material SelectedMaterial;
+
+    private Material OriginalMaterial;
+
     private SpriteRenderer[] GridSprites;
 
     private const int GridWidth = 8;
@@ -41,10 +42,75 @@ public class GridGenerator : MonoBehaviour
     // Random as member to ease debugging by a fixed seed when needed
     System.Random GridRand = new System.Random();
 
+    private GameObject SelectedGem = null;
+
+    private Camera MainCamera;
+
     private void Start()
     {
+        // Save main camera for performance
+        MainCamera = Camera.main;
+
         // Generate automatically on startup
         GenerateMatchGrid();
+    }
+
+    private void Update()
+    {
+        Vector3? inputPosition = null;
+
+        // Handle mouse click
+        if (Input.GetMouseButtonDown(0))
+        {
+            inputPosition = Input.mousePosition;
+        }
+
+        // Handle screen touches.
+        if (Input.touchCount > 0)
+        {
+            Touch touch = Input.GetTouch(0);
+
+            if (touch.phase == TouchPhase.Ended)
+            {
+                inputPosition = touch.position;
+            }
+        }
+
+        if (inputPosition != null)
+        {
+            Debug.Log(inputPosition);
+
+            Ray ray = MainCamera.ScreenPointToRay(inputPosition.Value);
+            RaycastHit2D hit = Physics2D.Raycast(ray.origin, ray.direction);
+
+            if (hit.collider != null)
+            {
+                GameObject clickedGem = hit.collider.gameObject;
+
+                if (clickedGem != null && SelectedGem != null && SelectedGem != clickedGem)
+                {
+                    // Swap the two gems if we already have a selected one
+                    Vector3 clickedPosition = clickedGem.transform.position;
+                    clickedGem.transform.position = SelectedGem.transform.position;
+                    SelectedGem.transform.position = clickedPosition;
+
+                    // Restore the selected gem's material
+                    SelectedGem.GetComponent<SpriteRenderer>().material = OriginalMaterial;
+
+                    // Clear the selected gem
+                    SelectedGem = null;
+                }
+                else
+                {
+                    // Otherwise, save it for later
+                    SelectedGem = clickedGem;
+
+                    // Change selected gem material
+                    OriginalMaterial = SelectedGem.GetComponent<SpriteRenderer>().material;
+                    SelectedGem.GetComponent<SpriteRenderer>().material = SelectedMaterial;
+                }
+            }
+        }
     }
 
     public void GenerateMatchGrid()
@@ -78,8 +144,10 @@ public class GridGenerator : MonoBehaviour
                 iconGameObject.transform.position += new Vector3(x - (GridWidth / 2) + 0.5f, y - (GridHeight / 2) + 0.5f, 0);
 
                 int spriteIndex = x * GridWidth + y;
-                GridSprites[spriteIndex] = iconGameObject.AddComponent<SpriteRenderer>() as SpriteRenderer;
-                GridSprites[spriteIndex].sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);;
+                GridSprites[spriteIndex] = iconGameObject.AddComponent<SpriteRenderer>();
+                GridSprites[spriteIndex].sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100.0f);
+
+                iconGameObject.AddComponent<BoxCollider2D>();
             }
         }
     }
